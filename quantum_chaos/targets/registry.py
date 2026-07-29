@@ -6,6 +6,7 @@ from typing import Callable, Dict, List
 
 from .base import TargetSystem
 from .functions import (
+    CascadingFailure,
     CorrelatedFaults,
     DeceptiveTrap,
     MaxSatFailure,
@@ -51,3 +52,4 @@ register("needle", NeedleInHaystack)
 register("correlated_faults", CorrelatedFaults)
 register("sum_threshold", SumThreshold)
 register("maxsat", MaxSatFailure)
+register("cascading_failure", CascadingFailure)

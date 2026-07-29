@@ -113,6 +113,70 @@ verify an optimizer actually found the darkest corner:
 - **`needle`** — one hidden catastrophic combination; everything else flat. Showcase for Grover.
 - **`sum_threshold`** — smooth monotone degradation; a graceful sanity baseline.
 - **`maxsat`** — a planted weighted MAX-2-SAT instance: failure = weight of violated robustness constraints.
+- **`cascading_failure`** — an outage that *propagates* across a service dependency graph; failure = blast radius. Pairs naturally with cardinality constraints.
+
+---
+
+## Industrial features
+
+Real stress tests are messier than a clean optimization problem. The framework
+handles that head-on.
+
+### Feasibility constraints & blast radius
+
+Not every fault combination is reachable, and operators usually care about the
+worst case *within a blast radius* — at most `K` simultaneous faults. A
+`ConstraintSet` expresses cardinality/budget limits, mutual exclusions, forbidden
+pairs, implications, per-factor weights, and custom predicates. Infeasible
+configurations are penalized and **never executed on the target**, and sampling
+is confined to the feasible region so even a 17%-feasible space searches well.
+
+```python
+from quantum_chaos import ConstraintSet, FailureProblem, get_target
+from quantum_chaos.optimizers import VariationalQuantumSampler
+
+target = get_target("cascading_failure", num_factors=12)
+constraints = ConstraintSet.build(
+    target.make_search_space(),
+    max_active=4,                       # blast radius: ≤ 4 faults at once
+    forbidden_pairs=[("f2", "f3")],     # impossible together
+    implications=[("f0", "f1")],        # f0 failing degrades f1 too
+)
+problem = FailureProblem(target, constraints=constraints)
+result  = VariationalQuantumSampler(seed=0).optimize(problem)
+# → a 4-fault injection that cascades across the whole dependency graph
+```
+
+```bash
+qchaos run --target cascading_failure --factors 12 --max-active 4 --report audit.md
+```
+
+### Robust evaluation of noisy targets
+
+AI systems rarely fail deterministically. Set `repeats` and pick a tail-aware
+`aggregator` (`mean`, `p95`, `cvar`, …); per-config variance is tracked. Pathological
+targets are handled by explicit policy — including the industrially useful
+`on_error="as_failure"`, which treats a target that **crashes** on an input as a
+catastrophic failure to be discovered.
+
+```python
+FailureProblem(target, repeats=16, aggregator="cvar",      # worst-tail risk
+               on_error="as_failure", on_nonfinite="clip")
+```
+
+### Root-cause analysis & stress reports
+
+Finding a worst case is half the job; you also need to know *which* faults matter.
+
+- `minimal_critical_set` — the smallest fault subset that still reproduces the failure.
+- `marginal_importance` — each factor's contribution.
+- `pairwise_interactions` — the synergistic fault pairs (recovers ground-truth interactions exactly on the synthetic landscapes).
+- `StressReport` — packages all of the above into Markdown or JSON for a CI log or post-mortem.
+
+```python
+from quantum_chaos import StressReport
+StressReport.build(problem, result).save("audit.md")
+```
 
 ---
 
@@ -142,6 +206,7 @@ See `examples/` for runnable walk-throughs:
 - `02_qaoa_vs_random.py` — QAOA vs. random search, side by side.
 - `03_blackbox_target.py` — wrap an arbitrary Python function (a mock AI system).
 - `04_grover_darkest_corner.py` — Grover finds a hidden catastrophe with a quadratic speedup.
+- `05_constrained_blast_radius.py` — constrained cascading-outage search + a root-cause stress report.
 
 ---
 
@@ -149,7 +214,8 @@ See `examples/` for runnable walk-throughs:
 
 ```
 quantum_chaos/
-  core/        SearchSpace · FailureProblem (cached, budgeted) · OptimizationResult
+  core/        SearchSpace · FailureProblem (cached, budgeted, noisy, constrained)
+               OptimizationResult · ConstraintSet · analysis · StressReport
   targets/     TargetSystem · FunctionTarget · synthetic landscapes · registry
   quantum/     Qiskit backends (statevector / Aer) · ansätze · QUBO surrogate + Ising
   optimizers/  vqs · qaoa · grover · annealing · random · hillclimb

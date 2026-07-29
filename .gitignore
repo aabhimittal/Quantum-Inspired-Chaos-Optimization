@@ -13,3 +13,5 @@ venv/
 examples/*.png
 *.png
 !docs/**/*.png
+examples/*_report.md
+examples/*_stress_report.md
