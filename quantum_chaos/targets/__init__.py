@@ -2,6 +2,7 @@
 
 from .base import FunctionTarget, TargetSystem
 from .functions import (
+    CascadingFailure,
     CorrelatedFaults,
     DeceptiveTrap,
     MaxSatFailure,
@@ -23,6 +24,7 @@ __all__ = [
     "CorrelatedFaults",
     "SumThreshold",
     "MaxSatFailure",
+    "CascadingFailure",
     "get_target",
     "list_targets",
     "register",

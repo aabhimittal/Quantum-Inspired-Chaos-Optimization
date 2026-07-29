@@ -17,6 +17,9 @@ exercise the properties that make real AI-system failure discovery hard:
   degrades gracefully then collapses past a threshold.
 * **MaxSatFailure** — a planted weighted MAX-2-SAT instance: failure = weight of
   violated robustness constraints.
+* **CascadingFailure** — an outage that *propagates* across a service dependency
+  graph; failure = blast radius.  A realistic partner for cardinality/budget
+  constraints.
 """
 
 from __future__ import annotations
@@ -248,3 +251,63 @@ class MaxSatFailure(TargetSystem):
     def worst_config(self) -> Optional[Dict[str, int]]:
         names = self.make_search_space().names
         return {n: int(b) for n, b in zip(names, self._planted)}
+
+
+class CascadingFailure(TargetSystem):
+    """Cascading outage over a service dependency graph.
+
+    Models the failure mode operators fear most: a few injected faults that
+    *propagate*.  Each factor injects a fault at one service node; a node then
+    goes down if it is injected directly or if a fraction ``threshold`` of its
+    upstream dependencies are already down.  Failure = the number of nodes down
+    once the cascade settles (the blast radius).
+
+    Because propagation is super-additive, the worst case concentrates on a small
+    set of high-leverage nodes — which makes this a realistic partner for
+    cardinality / blast-radius constraints (see
+    :class:`~quantum_chaos.core.constraints.ConstraintSet`).  There is no simple
+    closed-form worst config, so :meth:`worst_config` returns ``None``.
+    """
+
+    def __init__(
+        self,
+        num_factors: int = 12,
+        edge_prob: float = 0.25,
+        threshold: float = 0.5,
+        seed: int = 17,
+        name: str = "cascading_failure",
+    ):
+        self.num_factors = int(num_factors)
+        self.threshold = float(threshold)
+        self.name = name
+        rng = np.random.default_rng(seed)
+        n = self.num_factors
+        # Random DAG: edges only point to higher indices (acyclic propagation).
+        self._upstream: List[List[int]] = [[] for _ in range(n)]
+        for j in range(n):
+            for i in range(j):
+                if rng.random() < edge_prob:
+                    self._upstream[j].append(i)
+
+    def _cascade_size(self, injected: np.ndarray) -> int:
+        n = self.num_factors
+        down = injected.astype(bool).copy()
+        # Nodes are in topological order (edges go low->high), so one forward
+        # pass settles the cascade.
+        for j in range(n):
+            if down[j]:
+                continue
+            ups = self._upstream[j]
+            if not ups:
+                continue
+            frac = sum(1 for i in ups if down[i]) / len(ups)
+            if frac >= self.threshold:
+                down[j] = True
+        return int(down.sum())
+
+    def failure_score(self, config: Dict[str, int]) -> float:
+        bits = _bits(config, self.make_search_space().names)
+        return float(self._cascade_size(bits))
+
+    def worst_config(self) -> Optional[Dict[str, int]]:
+        return None  # no closed-form ground truth

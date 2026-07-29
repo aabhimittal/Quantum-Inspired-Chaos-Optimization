@@ -58,6 +58,10 @@ class SearchSpace:
         names = [f.name for f in resolved]
         if len(set(names)) != len(names):
             raise ValueError(f"duplicate chaos factor names: {names}")
+        # Optional feasibility constraints; set by FailureProblem when provided.
+        # Kept as a plain attribute so constraint-aware sampling is transparent
+        # to every optimizer that already calls ``random_config``.
+        object.__setattr__(self, "constraints", None)
 
     # -- basic properties -------------------------------------------------
     @property
@@ -104,11 +108,22 @@ class SearchSpace:
 
     # -- sampling / enumeration ------------------------------------------
     def random_config(self, rng: np.random.Generator) -> Config:
+        """Draw a random configuration.
+
+        If feasibility :attr:`constraints` are attached, the draw is confined to
+        the feasible region so tightly-constrained spaces still sample usefully.
+        """
+        constraints = getattr(self, "constraints", None)
+        if constraints is not None:
+            return constraints.feasible_random(rng)
         return tuple(int(b) for b in rng.integers(0, 2, size=self.num_factors))
 
-    def all_configs(self) -> Iterator[Config]:
+    def all_configs(self, feasible_only: bool = False) -> Iterator[Config]:
         """Enumerate every corner of the space (only sane for small ``N``)."""
+        constraints = getattr(self, "constraints", None)
         for bits in product((0, 1), repeat=self.num_factors):
+            if feasible_only and constraints is not None and not constraints.is_feasible(bits):
+                continue
             yield bits
 
 

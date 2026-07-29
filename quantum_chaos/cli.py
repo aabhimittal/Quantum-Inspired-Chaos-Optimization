@@ -55,7 +55,22 @@ def _make_problem(args) -> FailureProblem:
     sig = inspect.signature(factory)
     tkwargs = {k: v for k, v in tkwargs.items() if k in sig.parameters}
     target = get_target(args.target, **tkwargs)
-    return FailureProblem(target), target
+
+    # Optional feasibility constraints (blast-radius cardinality budget).
+    constraints = None
+    max_active = getattr(args, "max_active", None)
+    if max_active is not None:
+        from .core.constraints import ConstraintSet
+
+        constraints = ConstraintSet.build(target.make_search_space(), max_active=max_active)
+
+    problem = FailureProblem(
+        target,
+        constraints=constraints,
+        repeats=getattr(args, "repeats", None) or 1,
+        aggregator=getattr(args, "aggregator", None) or "mean",
+    )
+    return problem, target
 
 
 def _hit(target, result) -> Optional[bool]:
@@ -104,6 +119,13 @@ def cmd_run(args) -> int:
 
         convergence_plot({args.optimizer: result}, save_path=args.plot)
         print(f"wrote {args.plot}")
+
+    if getattr(args, "report", None):
+        from .core.report import StressReport
+
+        report = StressReport.build(problem, result)
+        report.save(args.report)
+        print(f"wrote {args.report}")
     return 0
 
 
@@ -172,12 +194,21 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--shots", type=int, default=None, help="measurement shots")
         sp.add_argument("--iterations", type=int, default=None,
                         help="optimizer iterations")
+        sp.add_argument("--max-active", type=int, default=None, dest="max_active",
+                        help="blast-radius constraint: at most this many faults active")
+        sp.add_argument("--repeats", type=int, default=None,
+                        help="evaluate a noisy target this many times per config")
+        sp.add_argument("--aggregator", default=None,
+                        choices=["mean", "max", "min", "median", "p95", "p05", "cvar"],
+                        help="how to reduce noisy repeats")
 
     run_p = sub.add_parser("run", help="run one optimizer on one target")
     add_common(run_p)
     run_p.add_argument("--optimizer", default="vqs", choices=list(OPTIMIZERS))
     run_p.add_argument("--json", default=None, help="write result JSON to this path")
     run_p.add_argument("--plot", default=None, help="write a convergence PNG here")
+    run_p.add_argument("--report", default=None,
+                       help="write a root-cause stress report (.md or .json) here")
     run_p.set_defaults(func=cmd_run)
 
     bench_p = sub.add_parser("benchmark", help="compare optimizers on a target")

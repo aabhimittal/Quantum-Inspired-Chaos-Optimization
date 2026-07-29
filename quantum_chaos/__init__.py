@@ -23,9 +23,14 @@ Quickstart
 from ._version import __version__
 from .core import (
     ChaosFactor,
+    ConstraintSet,
     FailureProblem,
     OptimizationResult,
     SearchSpace,
+    StressReport,
+    marginal_importance,
+    minimal_critical_set,
+    pairwise_interactions,
 )
 from .targets import (
     FunctionTarget,
@@ -41,6 +46,11 @@ __all__ = [
     "OptimizationResult",
     "SearchSpace",
     "ChaosFactor",
+    "ConstraintSet",
+    "StressReport",
+    "marginal_importance",
+    "minimal_critical_set",
+    "pairwise_interactions",
     "TargetSystem",
     "FunctionTarget",
     "get_target",
